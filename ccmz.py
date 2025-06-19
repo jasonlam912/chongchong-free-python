@@ -46,7 +46,8 @@ class LibCCMZ:
     @staticmethod
     def write_midi(data, output):
         ticks_per_beat = 480
-        tick_delta = 120
+        tick_delta = 60
+        tick_arpeggio_delta = 120
         tempos = data.get('tempos', [])
         if not tempos or not tempos[0].get('tempo'):
             raise ValueError("Invalid tempo data")
@@ -82,10 +83,16 @@ class LibCCMZ:
                     pitch = event['event'][1]
                     event['tick'] = round(event['tick']/tick_delta)*tick_delta
                     time = event['tick'] / ticks_per_beat
-                    event_duration = event['duration']
+                    event_duration = event['duration'] / 0.9
+                    duration: float
                     if index < len(keys) - 1:
-                        event_duration = sorted_events[idx][list(keys)[index + 1]][0]['tick'] - event['tick']
-                    duration = event_duration /ticks_per_beat
+                        tick_duration = sorted_events[idx][list(keys)[index + 1]][0]['tick'] - event['tick']
+                        if event_duration / tick_duration > 2:
+                            tick_duration = sorted_events[idx][list(keys)[index + 2]][0]['tick'] - sorted_events[idx][list(keys)[index + 1]][0]['tick']
+                            time = sorted_events[idx][list(keys)[index + 1]][0]['tick'] / ticks_per_beat
+                        duration = tick_duration / ticks_per_beat
+                    else:
+                        duration = event_duration /ticks_per_beat
 
                     midi.addNote(idx, 0, pitch, time, duration, 80)
 

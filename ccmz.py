@@ -1,8 +1,10 @@
+import math
 import zipfile
 import json
 import io
 import requests
-from midiutil.MidiFile import MIDIFile
+from midiutil import SHARPS, FLATS
+from midiutil.MidiFile import MIDIFile, MAJOR
 import os
 
 class CCMZ:
@@ -44,6 +46,7 @@ class LibCCMZ:
     @staticmethod
     def write_midi(data, output):
         ticks_per_beat = 480
+        tick_delta = 120
         tempos = data.get('tempos', [])
         if not tempos or not tempos[0].get('tempo'):
             raise ValueError("Invalid tempo data")
@@ -53,26 +56,38 @@ class LibCCMZ:
         events = data.get('events', [])
         midi = MIDIFile(len(tracks))
         midi.addText(track=0, time=0, text="Made with love by yfishyon from gangqinpu.com") #水印
-
+        sorted_events = [{} for i in range(0,len(tracks))]
+        for event in events:
+            if event.get('duration', 0) <= 0 or 'staff' not in event:
+                continue
+            ev = event.get('event', [])
+            if not isinstance(ev, list) or len(ev) < 2:
+                continue
+            if (event['staff'] - 1) < len(sorted_events) and (event['staff'] - 1) >= 0:
+                event['tick'] = round(event['tick'] / tick_delta) * tick_delta
+                temp_events = sorted_events[event['staff'] - 1].get(event['tick'])
+                if temp_events is None:
+                    sorted_events[event['staff'] - 1][event['tick']] = [event]
+                else:
+                    temp_events.append(event)
         for idx, track in enumerate(tracks):
             midi.addTrackName(idx, 0, track.get('name', f"Track{idx}"))
             midi.addTempo(idx, 0, round(60000000 / initial_tempo))
             midi.addProgramChange(idx, 0, 0, 0)
+            midi.addKeySignature(idx, 0, 4, FLATS, MAJOR)
+            keys = sorted_events[idx].keys()
+            for index, key in enumerate(keys):
+                temp_events = sorted_events[idx][key]
+                for event in temp_events:
+                    pitch = event['event'][1]
+                    event['tick'] = round(event['tick']/tick_delta)*tick_delta
+                    time = event['tick'] / ticks_per_beat
+                    event_duration = event['duration']
+                    if index < len(keys) - 1:
+                        event_duration = sorted_events[idx][list(keys)[index + 1]][0]['tick'] - event['tick']
+                    duration = event_duration /ticks_per_beat
 
-            for event in events:
-                if event.get('duration', 0) <= 0 or 'staff' not in event:
-                    continue
-                ev = event.get('event', [])
-                if not isinstance(ev, list) or len(ev) < 2:
-                    continue
-                if (event['staff'] - 1) != idx:
-                    continue
-
-                pitch = ev[1]
-                time = event['tick'] / ticks_per_beat
-                duration = event['duration'] / ticks_per_beat
-
-                midi.addNote(idx, 0, pitch, time, duration, 80)
+                    midi.addNote(idx, 0, pitch, time, duration, 80)
 
         with open(output, 'wb') as f:
             midi.writeFile(f)
